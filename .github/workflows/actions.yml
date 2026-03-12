@@ -1,0 +1,61 @@
+name: Update Movie Data
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run fetch.py
+        env:
+          API_TOKEN: ${{ secrets.API_TOKEN }}
+        run: python backend/fetch.py
+
+      - name: Run clean.py
+        run: python backend/clean.py
+
+      - name: Run recommend.py
+        run: python backend/recommend.py
+
+      - name: Write success log
+        if: success()
+        run: |
+          mkdir -p logs
+          echo "[$(date -u '+%Y-%m-%d %H:%M:%S UTC')] ✅ Automation ran successfully." >> logs/automation.log
+
+      - name: Write failure log
+        if: failure()
+        run: |
+          mkdir -p logs
+          echo "[$(date -u '+%Y-%m-%d %H:%M:%S UTC')] ❌ Automation FAILED. Check GitHub Actions for details." >> logs/automation.log
+
+      - name: Commit and push updated files
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add backend/movies.csv backend/similarity.pkl backend/movies_list.pkl logs/automation.log
+          git diff --cached --quiet || git commit -m "🤖 Auto-update movie data"
+          git push
+# ```
+
+# This will create and maintain a `logs/automation.log` file in your repo that looks like this over time:
+# ```
+# [2024-03-10 00:00:45 UTC] ✅ Automation ran successfully.
+# [2024-03-11 00:00:38 UTC] ✅ Automation ran successfully.
+# [2024-03-12 00:00:41 UTC] ❌ Automation FAILED. Check GitHub Actions for details.
+# [2024-03-13 00:00:52 UTC] ✅ Automation ran successfully.
