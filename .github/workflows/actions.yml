@@ -2,24 +2,26 @@ name: Update Movie Data
 
 on:
   schedule:
-    - cron: '*/5 * * * *'  
-  workflow_dispatch:
+    - cron: "*/5 * * * *" # Every 5 minutes
+  workflow_dispatch: # Manual trigger from GitHub UI
 
 jobs:
-  update-data:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+      - name: Checkout repo content
+        uses: actions/checkout@v2
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - name: Install Python packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
       - name: Run fetch.py
         env:
@@ -44,18 +46,15 @@ jobs:
           mkdir -p logs
           echo "[$(date -u '+%Y-%m-%d %H:%M:%S UTC')] ❌ Automation FAILED. Check GitHub Actions for details." >> logs/automation.log
 
-      - name: Commit and push updated files
+      - name: Commit files
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add backend/movies.csv backend/similarity.pkl backend/movies_list.pkl logs/automation.log
-          git diff --cached --quiet || git commit -m "🤖 Auto-update movie data"
-          git push
-# ```
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add -A
+          git diff-index --quiet HEAD || (git commit -a -m "🤖 Auto-update movie data" --allow-empty)
 
-# This will create and maintain a `logs/automation.log` file in your repo that looks like this over time:
-# ```
-# [2024-03-10 00:00:45 UTC] ✅ Automation ran successfully.
-# [2024-03-11 00:00:38 UTC] ✅ Automation ran successfully.
-# [2024-03-12 00:00:41 UTC] ❌ Automation FAILED. Check GitHub Actions for details.
-# [2024-03-13 00:00:52 UTC] ✅ Automation ran successfully.
+      - name: Push changes
+        uses: ad-m/github-push-action@v0.6.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: main
