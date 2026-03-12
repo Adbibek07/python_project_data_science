@@ -16,7 +16,7 @@ def get_movies(map):
         "Authorization": f"Bearer {token}"
     }
     movies = []
-    for page in range(1, 51):   # first 60 pages
+    for page in range(1, 61):   # first 60 pages
         params = {"page": page}
         
         response = requests.get(url, headers=headers, params=params)
