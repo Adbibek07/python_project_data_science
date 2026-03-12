@@ -9,6 +9,13 @@ from collections import Counter
 import ast
 import pickle
 
+import subprocess
+if not os.path.exists(os.path.join(os.path.dirname(__file__), "../backend/movies.csv")):
+    subprocess.run(["python", os.path.join(os.path.dirname(__file__), "../backend/fetch.py")])
+    subprocess.run(["python", os.path.join(os.path.dirname(__file__), "../backend/clean.py")])
+    subprocess.run(["python", os.path.join(os.path.dirname(__file__), "../backend/recommend.py")])
+
+
 # ── Recommendation functions ──────────────────────────────
 @st.cache_resource
 def load_recommendation_model():
