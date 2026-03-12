@@ -35,7 +35,7 @@ def get_recommendations(movie_title, cosine_sim, movies_df, num_recommendations=
     return result
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="CineScope",
+    page_title="Movie Analysis",
     page_icon="🎬",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -52,14 +52,56 @@ st.markdown("""
       font-family: 'Inter', sans-serif;
   }
     div[class*="block-container"] {
-    padding-top: 1rem !important;
+    padding-top: 2rem !important;
   }
   h1, h2, h3 { font-family: 'Bebas Neue', sans-serif; letter-spacing: 2px; }
 
-  /* Sidebar */
+/* Sidebar */
   section[data-testid="stSidebar"] {
       background: #10101a;
       border-right: 1px solid #2a2a3a;
+      padding-top: 0.5rem !important;
+  }
+
+  div[data-testid="stSidebar"] div[data-testid="stButton"] button {
+      background: transparent !important;
+      border: none !important;
+      border-left: 2px solid transparent !important;
+      border-radius: 0 !important;
+      color: #666 !important;
+      font-size: 0.95rem !important;
+      letter-spacing: 1px !important;
+      padding: 10px 14px !important;
+      text-align: left !important;
+      width: 100% !important;
+  }
+  div[data-testid="stSidebar"] div[data-testid="stButton"] button:hover {
+      border-left-color: #c9a84c !important;
+      color: #e8e0d0 !important;
+      background: transparent !important;
+  }
+  /* Target all text inside sidebar radio */
+  div[data-testid="stSidebar"] label p {
+      font-size: 1.1rem !important;
+      font-family: 'Bebas Neue', sans-serif !important;
+      letter-spacing: 2px !important;
+  }
+
+  div[data-testid="stSidebar"] label {
+      padding: 8px 12px !important;
+      border-radius: 8px !important;
+      margin-bottom: 6px !important;
+      border: 1px solid transparent !important;
+      transition: all 0.2s !important;
+  }
+
+  div[data-testid="stSidebar"] label:hover {
+      background: #1a1a2a !important;
+      border-color: #2a2a3a !important;
+  }
+
+  div[data-testid="stSidebar"] label:hover p {
+      color: #c9a84c !important;
   }
 
   /* Metric cards */
@@ -179,34 +221,130 @@ def load_data():
 
 df = load_data()
 
-# ── Sidebar nav ───────────────────────────────────────────────────────────────
-st.sidebar.markdown("## 🎬 Movie Analysis")
-st.sidebar.markdown("---")
-page = st.sidebar.radio(
-    "Navigation",
-    ["📊 Dashboard", "🎥 Browse Movies", "🤖 Recommendations"],
-    label_visibility="collapsed",
+# Sidebar
+st.sidebar.markdown(
+"<p style='font-family:Bebas Neue,sans-serif; font-size:2rem; letter-spacing:4px; color:#c9a84c; padding: 8px 14px 0 14px; line-height:1.1;'>🎬 Movie<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Analysis</p>",    unsafe_allow_html=True
 )
-st.sidebar.markdown("---")
-st.sidebar.caption(f"Dataset: **{len(df)} movies**")
+st.sidebar.markdown("<hr style='border-color:#2a2a3a;'>", unsafe_allow_html=True)
 
+params = st.query_params
+if "page" not in st.session_state:
+    st.session_state.page = params.get("page", "Dashboard")
+
+for p in ["Dashboard", "Browse Movies", "Recommendations"]:
+    if st.sidebar.button(p, key=f"nav_{p}", use_container_width=True):
+        st.session_state.page = p
+        st.query_params["page"] = p
+        st.rerun()
+
+page = st.session_state.page
+
+st.sidebar.markdown("<hr style='border-color:#2a2a3a;'>", unsafe_allow_html=True)
+st.sidebar.caption(f"{len(df)} movies loaded")
+st.sidebar.markdown("""
+<div style='padding: 8px 4px; font-size: 1 rem; color: #666; line-height: 1.7;'>
+    Data scraped from the <strong style='color:#777'>TMDB API</strong>.<br>
+    <span style='color:#666'>Updated on every run via the scraper pipeline.</span>
+</div>
+""", unsafe_allow_html=True)
 # ═══════════════════════════════════════════════════════════════════════════════
+
 # PAGE 1 — DASHBOARD
 # ═══════════════════════════════════════════════════════════════════════════════
-if page == "📊 Dashboard":
+if page == "Dashboard":
     st.markdown("# 📊 DASHBOARD")
-    st.markdown("An overview of your movie dataset.")
+    st.markdown("An overview of the movie dataset.")
 
     # ── KPI row ──────────────────────────────────────────────────────────────
-    c1, c2, c3, c4 = st.columns(4)
+    all_genres = [g for sublist in df["genre_list"] for g in sublist]
+    top_genre = Counter(all_genres).most_common(1)[0][0]
+
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Total Movies", len(df))
     c2.metric("Avg Rating", f"{df['vote_average'].mean():.2f} ⭐")
     c3.metric("Avg Popularity", f"{df['popularity'].mean():.0f}")
-    c4.metric("Languages", df["original_language"].nunique())
+    c4.metric("Top Genre", top_genre)
+    c5.metric("Languages", df["original_language"].nunique())
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ── Genre distribution ────────────────────────────────────────────────────
+    # ── Dynamic insight summaries ─────────────────────────────────────────────
+    highest_rated = df.nlargest(2, "vote_average")[["title", "vote_average"]]
+    most_popular = df.nlargest(2, "popularity")[["title", "popularity"]]
+    most_voted = df.nlargest(2, "vote_count")[["title", "vote_count"]]
+
+    # hidden gem: high rating but low popularity
+    gem = df[df["vote_average"] >= 7].nsmallest(1, "popularity").iloc[0]
+
+    # most active month
+    df["month_year"] = df["release_date"].dt.to_period("M").astype(str)
+    active_month = df["month_year"].value_counts().idxmax()
+
+    # dominant language
+    top_lang = df["original_language"].value_counts()
+    top_lang_pct = (top_lang.iloc[0] / len(df) * 100)
+    second_lang = top_lang.index[1] if len(top_lang) > 1 else ""
+    third_lang = top_lang.index[2] if len(top_lang) > 2 else ""
+
+    st.markdown("""
+    <style>
+    .insight-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+        margin-bottom: 24px;
+    }
+    .insight-card {
+        background: #14141f;
+        border: 1px solid #2a2a3a;
+        border-radius: 10px;
+        padding: 16px;
+        border-top: 2px solid #c9a84c;
+    }
+    .insight-icon { font-size: 1.3rem; margin-bottom: 6px; }
+    .insight-title { font-size: .72rem; font-weight: 600; color: #c9a84c; margin-bottom: 6px; letter-spacing: 1px; text-transform: uppercase; }
+    .insight-text { font-size: .78rem; color: #888; line-height: 1.6; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown(f"""
+    <div class="insight-grid">
+        <div class="insight-card">
+            <div class="insight-icon">🏆</div>
+            <div class="insight-title">Highest Rated</div>
+            <div class="insight-text"><strong style="color:#e8e0d0">{highest_rated.iloc[0]['title']}</strong> leads with a <strong style="color:#c9a84c">{highest_rated.iloc[0]['vote_average']:.1f}</strong> rating, followed by <strong style="color:#e8e0d0">{highest_rated.iloc[1]['title']}</strong> at {highest_rated.iloc[1]['vote_average']:.1f}</div>
+        </div>
+        <div class="insight-card">
+            <div class="insight-icon">🔥</div>
+            <div class="insight-title">Most Popular</div>
+            <div class="insight-text"><strong style="color:#e8e0d0">{most_popular.iloc[0]['title']}</strong> dominates popularity at <strong style="color:#c9a84c">{most_popular.iloc[0]['popularity']:.0f}</strong>, nearly {most_popular.iloc[0]['popularity']/most_popular.iloc[1]['popularity']:.1f}x the second most popular movie</div>
+        </div>
+        <div class="insight-card">
+            <div class="insight-icon">👥</div>
+            <div class="insight-title">Most Voted</div>
+            <div class="insight-text"><strong style="color:#e8e0d0">{most_voted.iloc[0]['title']}</strong> leads vote count with <strong style="color:#c9a84c">{most_voted.iloc[0]['vote_count']:,}</strong> votes, followed by {most_voted.iloc[1]['title']} at {most_voted.iloc[1]['vote_count']:,}</div>
+        </div>
+        <div class="insight-card">
+            <div class="insight-icon">💎</div>
+            <div class="insight-title">Hidden Gem</div>
+            <div class="insight-text"><strong style="color:#e8e0d0">{gem['title']}</strong>: <strong style="color:#c9a84c">{gem['vote_average']:.1f}</strong> rating but relatively low popularity of {gem['popularity']:.0f} — criminally underexposed</div>
+        </div>
+        <div class="insight-card">
+            <div class="insight-icon">📅</div>
+            <div class="insight-title">Most Active Period</div>
+            <div class="insight-text"><strong style="color:#c9a84c">{active_month}</strong> has the most releases in the dataset with <strong style="color:#e8e0d0">{df['month_year'].value_counts().iloc[0]}</strong> movies dropping that month</div>
+        </div>
+        <div class="insight-card">
+            <div class="insight-icon">🌍</div>
+            <div class="insight-title">Dominant Language</div>
+            <div class="insight-text"><strong style="color:#c9a84c">{top_lang.index[0].upper()}</strong> movies make up <strong style="color:#e8e0d0">{top_lang_pct:.0f}%</strong> of the dataset, with <strong style="color:#e8e0d0">{second_lang.upper()}</strong> and <strong style="color:#e8e0d0">{third_lang.upper()}</strong> as runner-ups</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── Row 1: Genre distribution + Rating distribution ───────────────────────
     all_genres = [g for sublist in df["genre_list"] for g in sublist]
     genre_counts = Counter(all_genres)
     gdf = pd.DataFrame(genre_counts.items(), columns=["Genre", "Count"]).sort_values("Count", ascending=True)
@@ -214,6 +352,7 @@ if page == "📊 Dashboard":
     col1, col2 = st.columns(2)
     with col1:
         st.markdown('<p class="section-title">Genre Distribution</p>', unsafe_allow_html=True)
+        st.caption("How many movies belong to each genre")
         fig = px.bar(
             gdf, x="Count", y="Genre", orientation="h",
             color="Count", color_continuous_scale=["#1e1e2e", "#c9a84c"],
@@ -224,30 +363,73 @@ if page == "📊 Dashboard":
             coloraxis_showscale=False, margin=dict(l=0, r=0, t=10, b=0),
             yaxis_title=None, xaxis_title=None,
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
+        st.markdown("<br><br>", unsafe_allow_html=True)
 
-    # ── Popularity vs Rating scatter ──────────────────────────────────────────
     with col2:
-        st.markdown('<p class="section-title">Popularity vs Rating</p>', unsafe_allow_html=True)
-        fig2 = px.scatter(
-            df, x="popularity", y="vote_average",
-            size="vote_count", color="vote_average",
-            hover_name="title",
-            color_continuous_scale=["#2a2a3a", "#c9a84c", "#ff6b35"],
+        st.markdown('<p class="section-title">Rating Distribution</p>', unsafe_allow_html=True)
+        st.caption("How ratings are spread across the dataset")
+        rating_bins = pd.cut(df["vote_average"], bins=[0,4,5,6,7,8,9,10], labels=["0-4","4-5","5-6","6-7","7-8","8-9","9-10"])
+        rating_dist = rating_bins.value_counts().sort_index().reset_index()
+        rating_dist.columns = ["Range", "Count"]
+        fig_rd = px.bar(
+            rating_dist, x="Range", y="Count",
+            color="Count", color_continuous_scale=["#1e1e2e", "#c9a84c"],
             template="plotly_dark",
-            size_max=40,
         )
-        fig2.update_layout(
+        fig_rd.update_layout(
             paper_bgcolor="#0a0a0f", plot_bgcolor="#0a0a0f",
             coloraxis_showscale=False, margin=dict(l=0, r=0, t=10, b=0),
-            xaxis_title="Popularity", yaxis_title="Rating",
+            xaxis_title=None, yaxis_title="Movies",
         )
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig_rd, width='stretch')
+        st.markdown("<br><br>", unsafe_allow_html=True)
 
-    # ── Top movies by vote count ──────────────────────────────────────────────
+
+    # ── Row 2: Popularity vs votes + Language breakdown ───────────────────────
     col3, col4 = st.columns(2)
     with col3:
+        st.markdown('<p class="section-title">Popularity vs Vote Count</p>', unsafe_allow_html=True)
+        st.caption("Do popular movies get more votes?")
+        fig_pv = px.scatter(
+            df, x="popularity", y="vote_count",
+            hover_name="title", color="vote_average",
+            color_continuous_scale=["#2a2a3a", "#c9a84c", "#ff6b35"],
+            template="plotly_dark", size_max=20,
+        )
+        fig_pv.update_layout(
+            paper_bgcolor="#0a0a0f", plot_bgcolor="#0a0a0f",
+            coloraxis_showscale=False, margin=dict(l=0, r=0, t=10, b=0),
+            xaxis_title="Popularity", yaxis_title="Vote Count",
+        )
+        st.plotly_chart(fig_pv, width='stretch')
+        st.markdown("<br><br>", unsafe_allow_html=True)
+
+
+    with col4:
+        st.markdown('<p class="section-title">Language Breakdown</p>', unsafe_allow_html=True)
+        st.caption("Movie count by original language")
+        lang_df = df["original_language"].value_counts().reset_index()
+        lang_df.columns = ["Language", "Count"]
+        fig_lang = px.pie(
+            lang_df.head(8), values="Count", names="Language",
+            color_discrete_sequence=px.colors.sequential.Plasma_r,
+            template="plotly_dark", hole=0.4,
+        )
+        fig_lang.update_layout(
+            paper_bgcolor="#0a0a0f", plot_bgcolor="#0a0a0f",
+            margin=dict(l=0, r=0, t=10, b=0),
+            legend=dict(font=dict(color="#888", size=11))
+        )
+        st.plotly_chart(fig_lang, width='stretch')
+        st.markdown("<br><br>", unsafe_allow_html=True)
+
+
+    # ── Row 3: Top movies by vote count + Release timeline ────────────────────
+    col5, col6 = st.columns(2)
+    with col5:
         st.markdown('<p class="section-title">Top Movies by Vote Count</p>', unsafe_allow_html=True)
+        st.caption("Most voted movies in the dataset")
         top_voted = df.nlargest(8, "vote_count")[["title", "vote_count", "vote_average"]]
         fig3 = px.bar(
             top_voted.sort_values("vote_count"), x="vote_count", y="title", orientation="h",
@@ -259,11 +441,13 @@ if page == "📊 Dashboard":
             coloraxis_showscale=False, margin=dict(l=0, r=0, t=10, b=0),
             yaxis_title=None, xaxis_title="Votes",
         )
-        st.plotly_chart(fig3, use_container_width=True)
+        st.plotly_chart(fig3, width='stretch')
+        st.markdown("<br><br>", unsafe_allow_html=True)
 
-    # ── Release timeline ──────────────────────────────────────────────────────
-    with col4:
+
+    with col6:
         st.markdown('<p class="section-title">Release Timeline</p>', unsafe_allow_html=True)
+        st.caption("Are newer movies rated higher or lower?")
         timeline_df = df.dropna(subset=["release_date"]).sort_values("release_date")
         fig4 = px.scatter(
             timeline_df, x="release_date", y="vote_average",
@@ -276,13 +460,75 @@ if page == "📊 Dashboard":
             coloraxis_showscale=False, margin=dict(l=0, r=0, t=10, b=0),
             xaxis_title="Release Date", yaxis_title="Rating",
         )
-        st.plotly_chart(fig4, use_container_width=True)
+        st.plotly_chart(fig4, width='stretch')
+        st.markdown("<br><br>", unsafe_allow_html=True)
+
+
+    # ── Row 4: Avg rating by genre + Hidden gems scatter ─────────────────────
+    col7, col8 = st.columns(2)
+    with col7:
+        st.markdown('<p class="section-title">Average Rating by Genre</p>', unsafe_allow_html=True)
+        st.caption("Which genres are rated highest on average")
+        genre_rating = []
+        for genre in set(all_genres):
+            genre_movies = df[df["genre_list"].apply(lambda x: genre in x)]
+            genre_rating.append({"Genre": genre, "Avg Rating": genre_movies["vote_average"].mean()})
+        grating_df = pd.DataFrame(genre_rating).sort_values("Avg Rating", ascending=True)
+        fig5 = px.bar(
+            grating_df, x="Avg Rating", y="Genre", orientation="h",
+            color="Avg Rating", color_continuous_scale=["#1e1e2e", "#c9a84c"],
+            template="plotly_dark",
+        )
+        fig5.update_layout(
+            paper_bgcolor="#0a0a0f", plot_bgcolor="#0a0a0f",
+            coloraxis_showscale=False, margin=dict(l=0, r=0, t=10, b=0),
+            xaxis_range=[0, 10], yaxis_title=None,
+        )
+        st.plotly_chart(fig5, width='stretch')
+        st.markdown("<br><br>", unsafe_allow_html=True)
+
+
+    with col8:
+        st.markdown('<p class="section-title">Hidden Gems vs Overhyped</p>', unsafe_allow_html=True)
+        st.caption("High rating + low popularity = hidden gem | Low rating + high popularity = overhyped")
+
+        def classify(row):
+            if row["vote_average"] >= 7 and row["popularity"] < 50:
+                return "💎 Hidden Gem"
+            elif row["vote_average"] < 6 and row["popularity"] >= 50:
+                return "🔥 Overhyped"
+            elif row["vote_average"] >= 7 and row["popularity"] >= 50:
+                return "🏆 Blockbuster"
+            else:
+                return "😴 Sleeper"
+
+        df["category"] = df.apply(classify, axis=1)
+        fig6 = px.scatter(
+            df, x="popularity", y="vote_average",
+            color="category", hover_name="title",
+            color_discrete_map={
+                "💎 Hidden Gem": "#6bff6b",
+                "🔥 Overhyped": "#ff6b6b",
+                "🏆 Blockbuster": "#c9a84c",
+                "😴 Sleeper": "#6b9fff",
+            },
+            template="plotly_dark",
+        )
+        fig6.update_layout(
+            paper_bgcolor="#0a0a0f", plot_bgcolor="#0a0a0f",
+            margin=dict(l=0, r=0, t=10, b=0),
+            xaxis_title="Popularity", yaxis_title="Rating",
+            legend=dict(font=dict(color="#888", size=10))
+        )
+        st.plotly_chart(fig6, width='stretch')
+        st.markdown("<br><br>", unsafe_allow_html=True)
+
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PAGE 2 — BROWSE MOVIES
 # ═══════════════════════════════════════════════════════════════════════════════
-elif page == "🎥 Browse Movies":
+elif page == "Browse Movies":
     st.markdown("# 🎥 BROWSE MOVIES")
 
     # ── Filters ───────────────────────────────────────────────────────────────
@@ -327,7 +573,7 @@ elif page == "🎥 Browse Movies":
     end = start + MOVIES_PER_PAGE
     paginated = filtered.iloc[start:end]
 
-    st.caption(f"Showing **{len(filtered)}** movies")
+    st.caption("Showing 12 per page movies")
     st.markdown("---")
 
     # ── Movie grid ────────────────────────────────────────────────────────────
@@ -375,11 +621,11 @@ elif page == "🎥 Browse Movies":
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PAGE 3 — RECOMMENDATIONS (placeholder)
+# PAGE 3 — RECOMMENDATIONS 
 # ═══════════════════════════════════════════════════════════════════════════════
-elif page == "🤖 Recommendations":
+elif page == "Recommendations":
     st.markdown("# 🤖 RECOMMENDATIONS")
-    st.markdown("Find movies similar to your favorites.")
+    st.markdown(" ## Find movies similar to your favorites.")
 
     pkl_path = os.path.join(os.path.dirname(__file__), "../backend/similarity.pkl")
 
