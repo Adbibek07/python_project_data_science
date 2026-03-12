@@ -1,3 +1,4 @@
+from copyreg import pickle
 import os
 
 import streamlit as st
@@ -6,7 +7,32 @@ import plotly.express as px
 import plotly.graph_objects as go
 from collections import Counter
 import ast
+import pickle
 
+# ── Recommendation functions ──────────────────────────────
+@st.cache_resource
+def load_recommendation_model():
+    pkl_path = os.path.join(os.path.dirname(__file__), "../backend")
+    with open(os.path.join(pkl_path, "similarity.pkl"), "rb") as f:
+        cosine_sim = pickle.load(f)
+    with open(os.path.join(pkl_path, "movies_list.pkl"), "rb") as f:
+        movies_df = pickle.load(f)
+    return cosine_sim, movies_df
+
+def get_recommendations(movie_title, cosine_sim, movies_df, num_recommendations=6):
+    idx = movies_df[movies_df["title"] == movie_title].index[0]
+    sim_scores = list(enumerate(cosine_sim[idx]))
+    sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
+    sim_scores = sim_scores[1:num_recommendations+1]
+    movie_indices = [i[0] for i in sim_scores]
+    result = movies_df.iloc[movie_indices].copy()
+
+    # add genre_list column if missing
+    if "genre_list" not in result.columns:
+        result["genre_list"] = result["genre_names"].apply(
+            lambda x: [g.strip() for g in str(x).split(",")]
+        )
+    return result
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="CineScope",
@@ -138,18 +164,15 @@ st.markdown("""
 # ── Data ──────────────────────────────────────────────────────────────────────
 TMDB_IMG = "https://image.tmdb.org/t/p/w500"
 
+import os
+
 @st.cache_data
 def load_data():
     csv_path = os.path.join(os.path.dirname(__file__), "../backend/movies.csv")
-    if not os.path.exists(csv_path):
-        st.error("❌ No data file found. Please run the scraper first.")
-        st.stop()
     df = pd.read_csv(csv_path)
-    # Ensure genre_names is a list
-    if "genre_names" in df.columns:
-        df["genre_list"] = df["genre_names"].apply(
-            lambda x: [g.strip() for g in str(x).split(",")]
-        )
+    df["genre_list"] = df["genre_names"].apply(
+        lambda x: [g.strip() for g in str(x).split(",")]
+    )
     df["release_date"] = pd.to_datetime(df["release_date"], errors="coerce")
     df["year"] = df["release_date"].dt.year
     return df
@@ -356,16 +379,51 @@ elif page == "🎥 Browse Movies":
 # ═══════════════════════════════════════════════════════════════════════════════
 elif page == "🤖 Recommendations":
     st.markdown("# 🤖 RECOMMENDATIONS")
-    st.markdown("Coming soon — this page is reserved for a movie recommendation engine.")
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("Find movies similar to your favorites.")
 
-    st.markdown("""
-    <div class="rec-placeholder">
-        <span>🎯</span>
-        <strong style="letter-spacing:3px; font-family:'Bebas Neue',sans-serif; font-size:1.8rem; color:#c9a84c">COMING SOON</strong>
-        <p style="margin-top:12px; color:#555; font-size:.9rem">Movie recommendation engine — under construction</p>
-    </div>
-    """, unsafe_allow_html=True)
+    pkl_path = os.path.join(os.path.dirname(__file__), "../backend/similarity.pkl")
 
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.info("💡 **Ideas for this page:** Content-based filtering using genres & overview text, collaborative filtering, mood-based recommendations, or an LLM-powered 'describe what you want' search.")
+    if not os.path.exists(pkl_path):
+        st.info("⏳ Recommendation model is still loading, please wait...")
+        if st.button("🔄 Check again"):
+            st.rerun()
+    else:
+        # ── called here ──────────────────────────────────
+        cosine_sim, movies_df = load_recommendation_model()
+        # ─────────────────────────────────────────────────
+
+        selected_movie = st.selectbox(
+            "🎬 Type or select a movie",
+            options=movies_df["title"].tolist(),
+            index=None,
+            placeholder="Search a movie..."
+        )
+
+        if selected_movie:
+            st.markdown(f"**Movies similar to:** `{selected_movie}`")
+            st.markdown("---")
+
+            # ── called here ──────────────────────────────
+            recommendations = get_recommendations(selected_movie, cosine_sim, movies_df)
+            # ─────────────────────────────────────────────
+
+            cols = st.columns(3)
+            for i, (_, row) in enumerate(recommendations.iterrows()):
+                with cols[i % 3]:
+                    poster_url = f"{TMDB_IMG}{row['poster_path']}" if pd.notna(row.get("poster_path")) else f"https://via.placeholder.com/300x450/14141f/c9a84c?text={row['title'].replace(' ', '+')}"
+                    genres_html = "".join(f'<span class="badge">{g}</span>' for g in row["genre_list"][:3])
+                    stars = "★" * int(round(row["vote_average"] / 2)) + "☆" * (5 - int(round(row["vote_average"] / 2)))
+                    st.markdown(f"""
+                    <div class="movie-card">
+                      <img src="{poster_url}" alt="{row['title']}"/>
+                      <div class="movie-card-body">
+                        <p class="movie-card-title">{row['title']}</p>
+                        <div class="movie-card-genre">{row['release_date']}</div>
+                        <span class="star">{stars}</span>
+                        <small style="color:#888">{row['vote_average']:.1f} ({row['vote_count']:,} votes)</small>
+                        {genres_html}
+                        <p class="movie-card-overview">{row.get('overview','')}</p>
+                      </div>
+                    </div>
+                    <br/>
+                    """, unsafe_allow_html=True)

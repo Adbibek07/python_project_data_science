@@ -17,11 +17,23 @@ fi
 PYTHON="$DIR/venv/bin/python"
 STREAMLIT="$DIR/venv/bin/streamlit"
 
+# Step 1 — Scraping
 echo "Running scraper..."
 "$PYTHON" "$DIR/backend/fetch.py"
 
 if [ $? -eq 0 ]; then
-    echo "✅ Scraping successful — fresh data loaded."
+    echo "✅ Scraping successful."
+
+    # Step 2 — Cleaning
+    echo "Running data cleaning..."
+    "$PYTHON" "$DIR/backend/clean.py"
+
+    if [ $? -eq 0 ]; then
+        echo "✅ Cleaning successful."
+    else
+        echo "⚠️  Cleaning failed — using raw scraped data."
+    fi
+
 else
     echo "⚠️  Scraping failed — using previously scraped CSV file."
     if [ ! -f "$DIR/backend/movies.csv" ]; then
@@ -32,5 +44,10 @@ else
     fi
 fi
 
+# Step 3 — Recommendation model in background
+echo "🤖 Training recommendation model in background..."
+"$PYTHON" "$DIR/backend/recommend.py" &
+
+# Step 4 — Streamlit
 echo "🚀 Starting Streamlit..."
 "$STREAMLIT" run "$DIR/streamlit/app.py"

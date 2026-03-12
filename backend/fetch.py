@@ -62,11 +62,20 @@ movies = get_movies(map=map_genre())
 # Get the CSV headers (all keys from the first dictionary)
 headers = movies[0].keys()
 
+import os
+
+DIR = os.path.dirname(os.path.abspath(__file__))
+
+# # clean null and boolean values before writing
+# for movie in movies:
+#     for key, value in movie.items():
+#         if value is None:
+#             movie[key] = ""
+#         elif isinstance(value, bool):
+#             movie[key] = str(value)
+
 # Write to CSV
-with open("movies.csv", "w", newline="", encoding="utf-8") as f:
+with open(os.path.join(DIR, "movies.csv"), "w", newline="", encoding="utf-8") as f:
     writer = csv.DictWriter(f, fieldnames=headers)
     writer.writeheader()
     writer.writerows(movies)
-
-print("CSV file 'movies.csv' created successfully!")
-

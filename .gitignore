@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Virtual environment
 venv/
 
@@ -15,3 +16,7 @@ Thumbs.db
 
 # Environment variables
 .env
+
+# generated data files 
+backend/similarity.pkl
+backend/movies_list.pkl
