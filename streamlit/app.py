@@ -215,7 +215,7 @@ TMDB_IMG = "https://image.tmdb.org/t/p/w500"
 
 import os
 
-@st.cache_data(ttl=3600)  # refreshes every 1 hour
+@st.cache_data
 def load_data():
     csv_path = os.path.join(os.path.dirname(__file__), "../backend/movies.csv")
     df = pd.read_csv(csv_path)
